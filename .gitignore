@@ -27,3 +27,5 @@ server/.env
 server/uploads/
 server/prisma/dev.db
 server/prisma/*.db-journal
+server/dev.db
+server/*.db-journal
