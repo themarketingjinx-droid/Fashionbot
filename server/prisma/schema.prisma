@@ -1,0 +1,57 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String     @id @default(uuid())
+  walletAddress String     @unique
+  createdAt     DateTime   @default(now())
+  purchases     Purchase[]
+  pieces        Piece[]    @relation("DesignerPieces")
+}
+
+model Piece {
+  id           String     @id @default(uuid())
+  name         String
+  description  String
+  designerId   String
+  designer     User       @relation("DesignerPieces", fields: [designerId], references: [id])
+  designerName String
+  price        Float
+  currency     String     @default("ETH")
+  editionSize  Int        @default(1)
+  tags         String     // JSON array stored as string
+  // IPFS CIDs
+  previewCid   String     // low-res / watermarked preview (public)
+  modelCid     String     // full 3D model (gated — owner only)
+  metadataCid  String?    // NFT metadata JSON on IPFS
+  // On-chain
+  tokenId      String?
+  contractAddr String?
+  // Status
+  published    Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  purchases    Purchase[]
+}
+
+model Purchase {
+  id        String   @id @default(uuid())
+  userId    String
+  pieceId   String
+  txHash    String?  // real on-chain tx hash (null for mock)
+  pricePaid Float
+  currency  String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  piece     Piece    @relation(fields: [pieceId], references: [id])
+
+  @@unique([userId, pieceId])
+}

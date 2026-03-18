@@ -1,13 +1,20 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, CheckCircle2, Loader2, Package, Tag, DollarSign, FileText } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import useStore from '../store/useStore';
+import { uploadPiece } from '../lib/api';
 
 const STEP_LABELS = ['Upload Model', 'Piece Details', 'Pricing & Edition', 'Review & Mint'];
 
 export default function Designer() {
+  const navigate = useNavigate();
+  const { walletConnected, connectWallet, loadPieces } = useStore();
   const [step, setStep] = useState(0);
   const [minting, setMinting] = useState(false);
   const [minted, setMinted] = useState(false);
+  const [mintedPiece, setMintedPiece] = useState(null);
+  const [error, setError] = useState('');
   const fileRef = useRef();
 
   const [form, setForm] = useState({
@@ -29,18 +36,38 @@ export default function Designer() {
   };
 
   const handleMint = async () => {
+    if (!walletConnected) {
+      await connectWallet();
+      return;
+    }
+    setError('');
     setMinting(true);
-    await new Promise((r) => setTimeout(r, 3000));
-    setMinting(false);
-    setMinted(true);
+    try {
+      const formData = new FormData();
+      formData.append('model', form.file);
+      formData.append('name', form.name);
+      formData.append('designerName', form.designer);
+      formData.append('description', form.description);
+      formData.append('tags', form.tags);
+      formData.append('price', form.price);
+      formData.append('currency', form.currency);
+      formData.append('editionSize', form.edition);
+
+      const { piece } = await uploadPiece(formData);
+      setMintedPiece(piece);
+      setMinted(true);
+      await loadPieces();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setMinting(false);
+    }
   };
 
-  if (minted) {
+  if (minted && mintedPiece) {
     return (
       <div className="min-h-screen pt-24 flex items-center justify-center px-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
           className="max-w-md w-full text-center bg-white/5 border border-white/10 rounded-2xl p-10"
         >
           <div className="w-20 h-20 rounded-full bg-lime-400/10 border border-lime-400/30 flex items-center justify-center mx-auto mb-6">
@@ -48,25 +75,30 @@ export default function Designer() {
           </div>
           <h2 className="text-2xl font-black text-white mb-2">Piece Minted!</h2>
           <p className="text-white/40 text-sm mb-6">
-            <span className="text-white font-semibold">"{form.name}"</span> is now live on DRIP NFT.
-            Collectors can preview your piece in 3D and purchase to unlock full access.
+            <span className="text-white font-semibold">"{mintedPiece.name}"</span> is now live on DRIP NFT.
           </p>
           <div className="grid grid-cols-2 gap-3 text-left mb-6">
             <div className="bg-black/40 rounded-xl p-3">
-              <p className="text-xs text-white/30 mb-1">Token ID</p>
-              <p className="font-mono text-sm text-white">#00{Math.floor(Math.random()*900)+100}</p>
+              <p className="text-xs text-white/30 mb-1">Piece ID</p>
+              <p className="font-mono text-xs text-white truncate">{mintedPiece.id}</p>
             </div>
             <div className="bg-black/40 rounded-xl p-3">
-              <p className="text-xs text-white/30 mb-1">Contract</p>
-              <p className="font-mono text-xs text-white/60 truncate">0x4e8f...c29a</p>
+              <p className="text-xs text-white/30 mb-1">Price</p>
+              <p className="font-mono text-sm text-white">{mintedPiece.price} {mintedPiece.currency}</p>
             </div>
           </div>
-          <button
-            onClick={() => { setMinted(false); setStep(0); setForm({ file: null, name: '', designer: '', description: '', tags: '', price: '', currency: 'ETH', edition: '1' }); }}
-            className="w-full py-3 rounded-xl font-bold text-black text-sm bg-gold"
-          >
-            Upload Another Piece
-          </button>
+          <div className="flex gap-3">
+            <button onClick={() => navigate(`/piece/${mintedPiece.id}`)}
+              className="flex-1 py-3 rounded-xl font-bold text-black text-sm bg-gold"
+            >
+              View Piece
+            </button>
+            <button onClick={() => { setMinted(false); setStep(0); setForm({ file: null, name: '', designer: '', description: '', tags: '', price: '', currency: 'ETH', edition: '1' }); }}
+              className="flex-1 py-3 rounded-xl font-semibold text-white text-sm border border-white/20"
+            >
+              Upload Another
+            </button>
+          </div>
         </motion.div>
       </div>
     );
@@ -78,6 +110,9 @@ export default function Designer() {
         <p className="text-xs tracking-widest text-gold uppercase mb-2">Designer Portal</p>
         <h1 className="text-3xl font-black text-white">Upload Your Piece</h1>
         <p className="text-white/40 text-sm mt-1">Mint your 3D fashion design as a protected NFT</p>
+        {!walletConnected && (
+          <p className="text-xs text-gold/70 mt-2">Connect your wallet before minting</p>
+        )}
       </div>
 
       {/* Stepper */}
@@ -85,18 +120,14 @@ export default function Designer() {
         {STEP_LABELS.map((label, i) => (
           <div key={i} className="flex items-center flex-1 last:flex-none">
             <div className="flex flex-col items-center gap-1">
-              <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all ${
-                  i < step ? 'bg-gold border-gold text-black' :
-                  i === step ? 'border-gold text-gold' :
-                  'border-white/20 text-white/30'
-                }`}
-              >
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all ${
+                i < step ? 'bg-gold border-gold text-black' :
+                i === step ? 'border-gold text-gold' :
+                'border-white/20 text-white/30'
+              }`}>
                 {i < step ? '✓' : i + 1}
               </div>
-              <span className={`text-[10px] whitespace-nowrap ${i === step ? 'text-gold' : 'text-white/30'}`}>
-                {label}
-              </span>
+              <span className={`text-[10px] whitespace-nowrap ${i === step ? 'text-gold' : 'text-white/30'}`}>{label}</span>
             </div>
             {i < STEP_LABELS.length - 1 && (
               <div className={`flex-1 h-px mx-1 mb-4 ${i < step ? 'bg-gold' : 'bg-white/10'}`} />
@@ -110,8 +141,7 @@ export default function Designer() {
         {step === 0 && (
           <motion.div key="s0" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
             <input ref={fileRef} type="file" accept=".glb,.gltf,.fbx,.obj" className="hidden" onChange={handleFile} />
-            <div
-              onClick={() => fileRef.current.click()}
+            <div onClick={() => fileRef.current.click()}
               className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${
                 form.file ? 'border-gold bg-gold/5' : 'border-white/20 hover:border-gold/50'
               }`}
@@ -130,9 +160,7 @@ export default function Designer() {
                 </>
               )}
             </div>
-            <button
-              disabled={!form.file}
-              onClick={() => setStep(1)}
+            <button disabled={!form.file} onClick={() => setStep(1)}
               className="mt-6 w-full py-3 rounded-xl font-bold text-black text-sm bg-gold disabled:opacity-30 disabled:cursor-not-allowed"
             >
               Continue →
@@ -151,10 +179,7 @@ export default function Designer() {
                 <label className="flex items-center gap-1.5 text-xs text-white/40 uppercase tracking-wider mb-2">
                   <Icon size={11} /> {label}
                 </label>
-                <input
-                  value={form[key]}
-                  onChange={(e) => update(key, e.target.value)}
-                  placeholder={placeholder}
+                <input value={form[key]} onChange={(e) => update(key, e.target.value)} placeholder={placeholder}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-gold placeholder:text-white/20"
                 />
               </div>
@@ -163,11 +188,8 @@ export default function Designer() {
               <label className="flex items-center gap-1.5 text-xs text-white/40 uppercase tracking-wider mb-2">
                 <FileText size={11} /> Description
               </label>
-              <textarea
-                value={form.description}
-                onChange={(e) => update('description', e.target.value)}
-                placeholder="Describe the piece, materials, inspiration…"
-                rows={4}
+              <textarea value={form.description} onChange={(e) => update('description', e.target.value)}
+                placeholder="Describe the piece, materials, inspiration…" rows={4}
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-gold placeholder:text-white/20 resize-none"
               />
             </div>
@@ -175,22 +197,16 @@ export default function Designer() {
               <label className="flex items-center gap-1.5 text-xs text-white/40 uppercase tracking-wider mb-2">
                 <Tag size={11} /> Tags (comma-separated)
               </label>
-              <input
-                value={form.tags}
-                onChange={(e) => update('tags', e.target.value)}
+              <input value={form.tags} onChange={(e) => update('tags', e.target.value)}
                 placeholder="e.g. Evening, Avant-garde, Silk"
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-gold placeholder:text-white/20"
               />
             </div>
             <div className="flex gap-3 pt-2">
               <button onClick={() => setStep(0)} className="flex-1 py-3 rounded-xl font-semibold text-white/50 border border-white/10 text-sm">← Back</button>
-              <button
-                disabled={!form.name || !form.designer}
-                onClick={() => setStep(2)}
+              <button disabled={!form.name || !form.designer} onClick={() => setStep(2)}
                 className="flex-1 py-3 rounded-xl font-bold text-black text-sm bg-gold disabled:opacity-30"
-              >
-                Continue →
-              </button>
+              >Continue →</button>
             </div>
           </motion.div>
         )}
@@ -203,16 +219,10 @@ export default function Designer() {
                 <DollarSign size={11} /> Price
               </label>
               <div className="flex gap-2">
-                <input
-                  type="number"
-                  value={form.price}
-                  onChange={(e) => update('price', e.target.value)}
-                  placeholder="0.00"
+                <input type="number" value={form.price} onChange={(e) => update('price', e.target.value)} placeholder="0.00"
                   className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-gold placeholder:text-white/20"
                 />
-                <select
-                  value={form.currency}
-                  onChange={(e) => update('currency', e.target.value)}
+                <select value={form.currency} onChange={(e) => update('currency', e.target.value)}
                   className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-gold"
                 >
                   <option value="ETH">ETH</option>
@@ -227,9 +237,7 @@ export default function Designer() {
               </label>
               <div className="grid grid-cols-4 gap-2">
                 {['1', '3', '5', '10'].map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => update('edition', n)}
+                  <button key={n} onClick={() => update('edition', n)}
                     className={`py-3 rounded-xl text-sm font-bold border transition-all ${
                       form.edition === n ? 'bg-gold border-gold text-black' : 'border-white/20 text-white/50 hover:border-gold/50'
                     }`}
@@ -239,28 +247,16 @@ export default function Designer() {
                 ))}
               </div>
             </div>
-
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4 mt-2">
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
               <p className="text-xs text-white/40 mb-2">Royalty Structure</p>
-              <div className="flex justify-between text-sm">
-                <span className="text-white/60">Creator royalty</span>
-                <span className="text-white font-semibold">10%</span>
-              </div>
-              <div className="flex justify-between text-sm mt-1">
-                <span className="text-white/60">Platform fee</span>
-                <span className="text-white font-semibold">2.5%</span>
-              </div>
+              <div className="flex justify-between text-sm"><span className="text-white/60">Creator royalty</span><span className="text-white font-semibold">10%</span></div>
+              <div className="flex justify-between text-sm mt-1"><span className="text-white/60">Platform fee</span><span className="text-white font-semibold">2.5%</span></div>
             </div>
-
             <div className="flex gap-3 pt-2">
               <button onClick={() => setStep(1)} className="flex-1 py-3 rounded-xl font-semibold text-white/50 border border-white/10 text-sm">← Back</button>
-              <button
-                disabled={!form.price}
-                onClick={() => setStep(3)}
+              <button disabled={!form.price} onClick={() => setStep(3)}
                 className="flex-1 py-3 rounded-xl font-bold text-black text-sm bg-gold disabled:opacity-30"
-              >
-                Review →
-              </button>
+              >Review →</button>
             </div>
           </motion.div>
         )}
@@ -285,20 +281,16 @@ export default function Designer() {
                 </div>
               ))}
             </div>
-
-            <div className="bg-gold/10 border border-gold/30 rounded-xl p-4 mb-6">
+            <div className="bg-gold/10 border border-gold/30 rounded-xl p-4 mb-4">
               <p className="text-xs text-gold font-semibold mb-1">Protection Enabled</p>
               <p className="text-xs text-white/40">
-                Buyers can preview your piece in 3D but cannot screenshot, save, or access the file until purchase.
-                Watermarking and copy-protection are applied automatically.
+                Buyers can preview in 3D but cannot access the file until purchase. Watermarking applied automatically.
               </p>
             </div>
-
+            {error && <p className="text-red-400 text-sm mb-4 text-center">{error}</p>}
             <div className="flex gap-3">
               <button onClick={() => setStep(2)} className="flex-1 py-3 rounded-xl font-semibold text-white/50 border border-white/10 text-sm">← Back</button>
-              <button
-                onClick={handleMint}
-                disabled={minting}
+              <button onClick={handleMint} disabled={minting}
                 className="flex-1 py-3 rounded-xl font-bold text-black text-sm bg-gold flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {minting ? <><Loader2 size={16} className="animate-spin" /> Minting…</> : '✦ Mint NFT'}

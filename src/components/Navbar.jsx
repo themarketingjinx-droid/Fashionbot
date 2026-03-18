@@ -4,7 +4,7 @@ import useStore from '../store/useStore';
 
 export default function Navbar() {
   const { pathname } = useLocation();
-  const { walletConnected, walletAddress, connectWallet, ownedIds } = useStore();
+  const { walletConnected, walletAddress, connectWallet, ownedPieces } = useStore();
 
   const links = [
     { to: '/', label: 'Gallery', icon: Shirt },
@@ -30,9 +30,9 @@ export default function Navbar() {
           >
             <Icon size={15} />
             {label}
-            {to === '/wardrobe' && ownedIds.length > 0 && (
+            {to === '/wardrobe' && ownedPieces.length > 0 && (
               <span className="ml-1 bg-gold text-black text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                {ownedIds.length}
+                {ownedPieces.length}
               </span>
             )}
           </Link>
@@ -41,14 +41,17 @@ export default function Navbar() {
 
       <button
         onClick={connectWallet}
+        disabled={walletConnected}
         className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all border ${
           walletConnected
-            ? 'border-gold text-gold bg-gold/10'
+            ? 'border-gold text-gold bg-gold/10 cursor-default'
             : 'border-white/30 text-white hover:border-gold hover:text-gold'
         }`}
       >
         <Wallet size={14} />
-        {walletConnected ? walletAddress : 'Connect Wallet'}
+        {walletConnected
+          ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`
+          : 'Connect Wallet'}
       </button>
     </nav>
   );
